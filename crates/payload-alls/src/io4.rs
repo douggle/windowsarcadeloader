@@ -190,6 +190,12 @@ fn gear(buttons: u32) -> u8 {
     g
 }
 
+/// The current gear (0 = neutral, 1-6), tracked by the IO board polling, for other consumers
+/// (the IndRun control feed) to read without driving the shifter state machine themselves.
+pub(crate) fn current_gear() -> u8 {
+    GEAR.load(Ordering::Relaxed)
+}
+
 /// The shifter's gate switches for a gear (player 2's word: up 5, down 4, left 3, right 2).
 fn gate(gear: u8) -> u16 {
     const UP: u16 = 1 << 5;

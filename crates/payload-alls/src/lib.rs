@@ -59,6 +59,8 @@ mod gunsensor;
 mod hotd;
 mod icf;
 mod idac;
+mod indctl;
+mod indlog;
 mod indrun;
 mod io4;
 mod led;
