@@ -35,6 +35,13 @@ pub fn gear(buttons: u32) -> u8 {
     g
 }
 
+/// The gear the last [`gear`] read left selected (0 neutral, 1-6): a consumer that is not the
+/// board's poll (Initial D THE ARCADE's IndRun control feed) reads it without driving the
+/// shifter's state machine itself.
+pub fn current_gear() -> u8 {
+    GEAR.load(Ordering::Relaxed)
+}
+
 /// The gate switches of a gear as a JVS switch byte: up 0x20, down 0x10, left 0x08, right 0x04.
 pub fn gate(gear: u8) -> u8 {
     const UP: u8 = 0x20;

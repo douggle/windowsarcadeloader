@@ -85,6 +85,8 @@ mod icf;
 mod idac;
 mod idz;
 mod idzenglish;
+mod indctl;
+mod indlog;
 mod indrun;
 mod inifile;
 mod io4;
