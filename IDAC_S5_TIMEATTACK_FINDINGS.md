@@ -1,6 +1,10 @@
 # Initial D THE ARCADE Season 5 — Time Attack timer / course-tracking findings
 
-Status: **diagnosed deeply, not fixed.** The sections below are in investigation order; the
+Status: **both race modes now run to their own end.** The early `RetireRace(1)` cancel that
+ended Story races seconds after the lights and Time Attack races about a minute in is filtered
+for the whole race (see "Both race modes ending early: the same `RetireRace(1)` (fixed)" at the
+end of this file; it supersedes the "not fixed" note that stood here). Time Attack's
+checkpoint-driven clock extension is still the open problem described below. The sections below are in investigation order; the
 **UPDATE** immediately below supersedes the earlier "refill / verdict" theories — those were ruled
 out by live instrumentation. **UPDATE 2** (next) retires the course-path lead of UPDATE step 6 and
 narrows the search to the course setting's `.pa4` paths and the sim car state.
@@ -368,3 +372,68 @@ Season 3 comparison (`IndRun.dll` 2,174,464 B, PE 2024-01-19) shows the same cod
 +8 field shift (`0x510` → `0x518`, `0x660` → `0x668`, `0x530` → `0x538`, `0x56c` → `0x574`,
 `0x10d8`/`0x10e8` → `0x1100`/`0x1104`): `GetRaceTime`, the timer and the goal block are identical,
 so none of the Season 5 workarounds are Season 5-specific bugs.
+
+## Both race modes ending early: the same `RetireRace(1)` (fixed)
+
+`cUE4Interface::RetireRace(eRetireRaceType)` (`IndRun.dll+0x5ede0`) type 1 runs
+`movl $0xffffffff,0x538(%rax)`: it stores `-1` into the race's remaining time, and the clock updater
+(`0x7b820`) then finishes the race on its next tick (`+0x668 = 6`, `+0xacc = 1`, `+0x53c` untouched),
+which the game reports as `eNORMAL`. The game issues that call even when it does not mean to end the
+race: seconds after the lights in Story, and about a minute in, mid-course, in Time Attack. The
+payload filters it (`crates/payload-alls/src/indstate.rs`), so the race runs to its own end.
+
+Story was fixed first (commit `c17e5e9`, section "Season 5 story races ending seconds after the
+start" below): the filter's window was 45 s, which covered the cancel arriving 1-2 s after the lights,
+and the budget refund (`WAL_ALLS_INDRUN_RESET=1`) put `+0x538` back to the value the game seeded.
+
+Time Attack needed the same filter across the whole race (commit `dfe8983`). Its cancel arrives after
+that 45 s window, so it passed straight through:
+
+```
+# before, WAL_ALLS_INDRUN_RETIRE: "45000"
+indstate: RetireRace(type=1) state=4 race_age=58899ms rem=63504 -> passed through
+indstate fast: t=502945ms state=6 finished=0 end=0x1 count=0
+```
+
+The race ended with 63 s still on the clock (`+0x538`). That is what "Time Attack ends early" looked
+like — not a short base time: the race's own budget was ~122 s and its clock was healthy.
+
+Policy now (`WAL_ALLS_INDRUN_RETIRE=1`, which the profile carries): a type-1 cancel is ignored while
+the race is in the racing state **and** still has time on the clock (`+0x538 > 0`), in both modes.
+Once the clock is spent the call goes to the original, so the normal end still works; type 2/3
+cancels and calls outside the racing state were always passed through. `WAL_ALLS_INDRUN_RETIRE=<ms>`
+keeps the old window for debugging, and leaving it unset turns the filter off. Every decision logs
+the remaining time, so a run states its own verdict:
+
+```
+indstate: RetireRace(type=1) state=4 race_age=50998ms rem=71056 -> ignored
+```
+
+### Verified in game
+
+| Run | Race kind | Cancel decision | Outcome |
+|---|---|---|---|
+| Story, unattended | `kind=4` | `race_age=12375ms rem=108128 -> ignored` | full 125 s budget, `state=6 end=0x1` at `rem=208` (clock expiry) |
+| Time Attack, driven | `kind=1` | `race_age=50998ms rem=71056 -> ignored` | ran on to the goal: `state=5 finished=0 end=0x0` at t=284.5 s |
+| Time Attack, before the fix | `kind=1` | `race_age=58899ms rem=63504 -> passed through` | `state=6 end=0x1` with 63 s of clock left |
+
+Two things follow from the last two rows:
+
+- a legitimate Time Attack finish does **not** go through `RetireRace(1)`: it takes the goal path
+  (`0x793a8` stores `state = 5`, with `end = 0x0`), so ignoring type 1 for the whole race cannot
+  block a real finish;
+- `+0x5c8` in the `indstate clock:` dumps is the race kind: `1` is Time Attack, `4` is Story. That is
+  how the two modes are told apart in the log without the game's own `Mode :` line (which only
+  records the race being created).
+
+The rest of the earlier sections is unchanged by this: the only budget write is still the green-light
+refund of `+0x538`, and nothing rewrites the elapsed stamps (`GetRaceTime` stays consistent).
+
+### Still open: Time Attack's checkpoint time bonuses
+
+Time Attack extends its clock from checkpoints, and the sections above show that IndRun's progress
+tracking for the player car never advances under the loader (`Standing`, no `Checkpoint passed`,
+`Max:[1]:0`). A Time Attack therefore runs on its base budget (+ the goal path) without those
+extensions: the spurious cancel no longer cuts it short, but the checkpoint bonuses are still not
+being added. That is the remaining Time Attack problem, and it is the same progress feed described in
+UPDATE — it needs a live debugger on the race-update loop, not another `WAL_PATCHES` guess.
