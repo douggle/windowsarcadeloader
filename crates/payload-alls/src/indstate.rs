@@ -198,22 +198,34 @@ static RETIRE_ORIG: AtomicUsize = AtomicUsize::new(0);
 static RACE_STATE: AtomicU32 = AtomicU32::new(0);
 /// When the race entered the racing state, in milliseconds since the payload started.
 static LIGHTS_MS: AtomicU64 = AtomicU64::new(0);
+/// `DAT_18021c720` of the loaded `IndRun.dll`, published to the hook by `install_retire_filter`
+/// so it can read the race's remaining time while deciding on a cancel.
+static RACE_BASE: AtomicUsize = AtomicUsize::new(0);
 
 fn now_ms() -> u64 {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     START.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
-/// `WAL_ALLS_INDRUN_RETIRE=<ms>`: pass `RetireRace(1)` through only once the race has been racing
-/// for that long, so the early cancel is ignored but quitting afterwards works. `1` means the
-/// 45 s default.
+/// The race's remaining time (`+0x538`), the value the timer updater counts down to zero.
+fn remaining_ms(race: usize) -> Option<i32> {
+    let p3 = unsafe { race_object(race) }?;
+    unsafe { readable(p3 + 0x538, 4) }
+        .then(|| unsafe { std::ptr::read_volatile((p3 + 0x538) as *const i32) })
+}
+
+/// `WAL_ALLS_INDRUN_RETIRE=<ms>`: the window in which a `RetireRace(1)` is ignored. `1` means the
+/// whole race, which is what both modes need: the game re-issues that cancel whenever its own
+/// progress tracking stalls, and that is not only at the start — Time Attack issues it about a
+/// minute in, mid-race, and it used to fall outside a short window and end the race with most of
+/// the clock left. A number keeps the old behaviour for debugging.
 fn retire_window() -> Option<u64> {
     static VALUE: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
     *VALUE.get_or_init(|| {
         let v = std::env::var("WAL_ALLS_INDRUN_RETIRE").ok()?;
         let v = v.trim().to_string();
         if v == "1" {
-            return Some(45_000);
+            return Some(u64::MAX);
         }
         v.parse::<u64>().ok().map(|ms| ms.clamp(1_000, 600_000))
     })
@@ -224,9 +236,16 @@ unsafe extern "system" fn retire_hook(this: usize, kind: u32) {
     let lights = LIGHTS_MS.load(Ordering::Relaxed);
     let age = if lights == 0 { 0 } else { now_ms().saturating_sub(lights) };
     let window = retire_window().unwrap_or(0);
-    let ignore = kind == 1 && state == RACING && lights != 0 && age < window;
+    let race = RACE_BASE.load(Ordering::Relaxed);
+    let rem = (race != 0).then(|| remaining_ms(race)).flatten();
+    // A cancel with time still on the clock is the game giving up on its own progress tracking,
+    // not the race ending: it fires in the middle of a Time Attack too. Once the clock is spent
+    // (`rem <= 0`) the cancel is the normal end and goes to the original.
+    let timely = rem.is_none_or(|rem| rem > 0);
+    let ignore = kind == 1 && state == RACING && lights != 0 && age < window && timely;
     log!(
-        "indstate: RetireRace(type={kind}) state={state} race_age={age}ms -> {}",
+        "indstate: RetireRace(type={kind}) state={state} race_age={age}ms rem={} -> {}",
+        rem.map_or_else(|| "?".to_string(), |rem| rem.to_string()),
         if ignore { "ignored" } else { "passed through" }
     );
     if ignore {
@@ -315,13 +334,18 @@ pub(crate) fn install_retire_filter(base: usize, race: usize) {
         let stub = page + 0x40;
         write_jump_stub(stub, retire_hook as *const () as usize);
         RETIRE_ORIG.store(tramp, Ordering::Relaxed);
+        RACE_BASE.store(race, Ordering::Relaxed);
         if !patch_entry(entry, stub) {
             log!("indstate: RetireRace filter not installed, entry patch out of range");
             return;
         }
     }
     std::thread::spawn(move || {
-        log!("indstate: RetireRace filter armed (type 1 ignored for the first {window} ms of a race)");
+        if window == u64::MAX {
+            log!("indstate: RetireRace filter armed (type 1 ignored for the whole race while time is left)");
+        } else {
+            log!("indstate: RetireRace filter armed (type 1 ignored for the first {window} ms of a race)");
+        }
         let mut last = u32::MAX;
         loop {
             std::thread::sleep(Duration::from_millis(10));
