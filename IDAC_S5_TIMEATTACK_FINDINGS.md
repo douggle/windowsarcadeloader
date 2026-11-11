@@ -461,7 +461,14 @@ enabled in the profile and logs nothing in these runs, so the progress comes fro
 `SetAccel` / `SetSteer` reaching IndRun once its checks pass — the opposite of the UPDATE-era
 conclusion that the pedals never arrived.
 
-Which piece is load-bearing is still not separated by an experiment: with `WAL_ALLS_INDRUN_RESET`
-and `WAL_ALLS_INDRUN_RETIRE` both off, a Time Attack would show whether the checks alone are
-enough. Until then, read the Standing analysis in UPDATE as historical (it describes the pre-rebase
-profile), not as the current mechanism.
+Which piece is load-bearing, measured: with `WAL_ALLS_INDRUN_RESET` and `WAL_ALLS_INDRUN_RETIRE`
+both off, a driven Time Attack (`kind=1`) reaches the racing state at t=96.7 s and ends `state=6
+end=0x1` at t=147.5 s — 51 s of racing — with `rem=71664` still on the clock, and neither the retire
+filter nor the budget refund armed in the log. So the retire filter is load-bearing for the race
+surviving at all: the cancel returns as soon as it is off, which is the original symptom.
+
+That run cannot say whether the race-setting checks alone drive progress, because the race dies at
+51 s and the first checkpoint of a Time Attack only lands ~94 s in. Isolating progress needs the
+other half: `WAL_ALLS_INDRUN_RESET` off with the retire filter on, which survives long enough to
+reach checkpoint 0. Until that is run, read the Standing analysis in UPDATE as historical (it
+describes the pre-rebase profile), not as the current mechanism.
