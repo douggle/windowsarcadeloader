@@ -468,7 +468,20 @@ filter nor the budget refund armed in the log. So the retire filter is load-bear
 surviving at all: the cancel returns as soon as it is off, which is the original symptom.
 
 That run cannot say whether the race-setting checks alone drive progress, because the race dies at
-51 s and the first checkpoint of a Time Attack only lands ~94 s in. Isolating progress needs the
-other half: `WAL_ALLS_INDRUN_RESET` off with the retire filter on, which survives long enough to
-reach checkpoint 0. Until that is run, read the Standing analysis in UPDATE as historical (it
-describes the pre-rebase profile), not as the current mechanism.
+51 s and the first checkpoint of a Time Attack only lands ~94 s in. The other half settles it —
+`WAL_ALLS_INDRUN_RESET` off, retire filter on, one driven Time Attack:
+
+- the clock starts clean: the first sample after the lights is `rem=120000`, so the budget is no
+  longer pre-spent and the green-light refund had nothing to repair in this run;
+- the mid-race cancel is still ignored (`race_age=49064ms rem=72912 -> ignored`);
+- `Checkpoint 0 passed (time:92628)` with the refund **off**, followed by the same burst of clock
+  extensions (+21120 / +24304 / +23520 / +23520 / +4048 ms, ~96 s) within 2.5 s of that checkpoint.
+
+So the retire filter is the load-bearing piece, and the refund is not needed for progress,
+checkpoints or the clock extension: with the race-setting checks in place the budget already starts
+at its full 120 s. `WAL_ALLS_INDRUN_RESET` stays in the profile as a safety net for a race that does
+reach the lights with `+0x538` already spent — the pre-rebase behaviour — not because progress
+depends on it.
+
+Read the Standing analysis in UPDATE as historical (it describes the pre-rebase profile), not as the
+current mechanism.
