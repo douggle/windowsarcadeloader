@@ -625,6 +625,9 @@ pub(super) fn reply(ctx: &Ctx, endpoint: &str) -> Option<Json> {
     match endpoint {
         "createaccount" => return Some(create_account(ctx)),
         "getdata" => return Some(get_data(ctx)),
+        // the name entry's word check (Season 5: `check_string` -> `ng_flag`, 0 = accepted;
+        // without it the entered name is refused)
+        "checkngwords" => return Some(ok().with("ng_flag", 0u32)),
         "gettadata" | "getpastseasontadata" | "getpastseasonrounddata" => {
             let doc = store::load(ctx.user).unwrap_or(Json::obj());
             let season = val(ctx.body, "season_id", 0i64);
@@ -648,6 +651,8 @@ pub(super) fn reply(ctx: &Ctx, endpoint: &str) -> Option<Json> {
             store::save(ctx.user, &doc);
             return Some(ok());
         }
+        // season 5's name entry: the driver name never refused
+        "checkngwords" => return Some(ok().with("ng_flag", 0u32)),
         _ => {}
     }
     let known = matches!(

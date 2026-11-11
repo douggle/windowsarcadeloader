@@ -100,6 +100,13 @@ class WindowsArcadeLoaderGenerator(Generator):
     def writesToRom(self, config) -> bool:
         return True
 
+    # Gun games: the payload draws the Sinden frame itself (WAL_SINDEN_BORDER), so configgen
+    # draws neither its gun border overlay nor a MangoHUD bezel. Read after generate().
+    _guns_borders_internal = False
+
+    def supportsInternalBezels(self) -> bool:
+        return self._guns_borders_internal
+
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
         if configure_emulator(rom):
             os.chdir(WAL_DIR)
@@ -113,10 +120,13 @@ class WindowsArcadeLoaderGenerator(Generator):
             )
 
         mkdir_if_not_exists(WAL_CONFIG)
+        self._guns_borders_internal = bool(getattr(system.config, 'use_guns', False))
 
         # ES options -> profile keys (top level or under input:), set ones only.
         top: dict[str, str] = {}
-        input_keys: dict[str, str] = {}
+        # Batocera quits the game itself (hotkey + start: the hotkeys context's exit), no
+        # internal pad combo (back + start: coin + start on arcade panels with coin on select)
+        input_keys: dict[str, str] = {'exit_combo': '[]'}
         reshade = system.config.get('wal_reshade')
         if reshade in ('0', '1'):
             # rotation / bezel of the dumps that ship a ReShade setup (vertical games)

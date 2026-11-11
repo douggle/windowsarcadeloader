@@ -1,0 +1,45 @@
+# Initial D THE ARCADE Season 5 — drive to a race, mostly unattended.
+#
+#   ./dist/arcade-launcher run "<dump>/initial-d-the-arcade-season-5.windowsloader" \
+#     --input-script tools/scripts/idac-s5-timeattack.txt --no-input --headless
+#
+# Times count from the game's start (the launcher restarts the script clock when it
+# spawns the game, crates/launcher/src/script.rs), so the menus land in the same
+# place every run.
+#
+# Proven from the game log: the coin and START credit the game, the auto card
+# reader serves the card, the login result screens advance by themselves, the start
+# menu opens ~11 s after the credit and closes itself ~1.5 s later, and the script
+# then takes the mode select, the course screen, the car screen and
+# CreateRace/StartRace, with the IndRun instrumentation live (race state 3/4/6,
+# checkpoint actors, control accel).
+#
+# NOT proven: moving the mode select's cursor off Story with scripted input. The
+# wheel's d-pad does it by hand, but the same virtual stick inputs in a scripted
+# run leave the cursor on Story, so these runs reach Story races (CreateRace
+# Mode :1), not Time Attack (Mode :2). Until that is understood, select Time
+# Attack by hand: run without --no-input (the wheel then drives the menus too) and
+# press LEFT then START once at the mode select; the script still credits the game
+# and holds the gas for the race.
+#
+# LEFT is sent as the wheel turned left and the d-pad's left together (`lx-` and
+# `left`), as the profile's own keyboard map does; two pairs cover a normal and a
+# slow login. A pair that arrives before the mode select is dropped, one that
+# arrives after it acts on the Time Attack course list.
+42.0 p1 coin
+42.4 p1 -
+44.0 p1 start        # attract: credit pay, card read
+44.4 p1 -
+62.0 p1 lx- left     # mode select: one step left, Story -> Time Attack
+62.6 p1 -
+63.5 p1 start        # confirm the mode
+63.9 p1 -
+72.0 p1 lx- left     # second pair for a login that stalled
+72.6 p1 -
+73.5 p1 start
+73.9 p1 -
+77.0 p1 start        # condition / course select: default course
+81.0 p1 start        # car select: default car
+85.0 p1 start        # race connect
+100.0 p1 accel       # held through the countdown into the race
+400.0 p1 -

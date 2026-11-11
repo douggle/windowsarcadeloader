@@ -16,9 +16,11 @@ name: null
 args: []
 # Windows executables to run from the game directory before the game starts.
 pre_launch: []
-# Programs of the game directory ("<exe> [args]") started before the game and left running
-# beside it (Sega ALLS's amdaemon.exe), with the system's payload when it is started through
-# wal-loader; the game starts background_wait_ms later.
+# Programs of the game directory ("<exe> [args]", a path from it: "../amdaemon/amdaemon.exe")
+# started before the game and left running beside it (Sega ALLS's amdaemon.exe), from their own
+# folder, with the system's payload when it is started through wal-loader (a program of the other
+# architecture: that architecture's loader and payload); the game starts background_wait_ms
+# later.
 background: []
 background_wait_ms: 3000
 
@@ -104,7 +106,8 @@ gamescope:
 # <name in the run directory>: <source, relative to the root> (e.g. a missing config file).
 # A name with a folder ("dir/file") is a path from the game root. A source "{dump}/<path>" is
 # a file of the dump, from its root (a DLL the dump keeps in another folder), "{payloads}/<file>"
-# a program built with the payloads.
+# a program built with the payloads, "{runner}/<path>" a file of the wine runner (a component it
+# ships: "{runner}/lib/wine/gxvk/i386-windows/glide2x.dll").
 files: {}
 # Files copied into the dump only when it does not have them yet (default settings or
 # calibration the game then keeps updating): <path from the dump root>: <source> (a source
@@ -307,6 +310,9 @@ input:
   # The mouse position wraps around that virtual screen instead of stopping at its edges: a
   # trackball's counters (x/y wrap from 32767 to -32768), for the games reading a trackball.
   mouse_wrap: false
+  # A multi-touch touchpad or touchscreen read finger by finger (`touch.rs`), its fingers sent to
+  # the game as touch points (CHUNITHM's slider); grabbed: the desktop's cursor stays still.
+  touch: false
   # Gun/mouse -> virtual stick of its player. Sources: x y (position, -32768 left/top ..
   # 32767), offscreen (gun pointing off the screen), evdev buttons (BTN_LEFT...).
   # Lightgun buttons as batocera-wine-guns: BTN_LEFT trigger, BTN_RIGHT action, BTN_MIDDLE

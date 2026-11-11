@@ -9,6 +9,8 @@ pub mod abaas_gs;
 // Sega Nu's AMEX board (JVS, DS, EEPROM, SRAM, GPIO) found by its device interface classes
 #[cfg(windows)]
 pub mod amex;
+pub mod amlog;
+pub mod packed;
 // AVPro Video's uGUI display played by Unity's VideoPlayer (Android builds without AVPro's backend)
 #[cfg(windows)]
 pub mod avpro;
@@ -59,6 +61,8 @@ pub(crate) mod late_hooks;
 // where the players' guns point in the game's window
 #[cfg(windows)]
 pub mod gun;
+// Initial D's 6-speed H shifter from the virtual stick
+pub mod hshifter;
 #[cfg(windows)]
 pub mod iat;
 // Unity IL2CPP games' compiled code (GameAssembly.dll's embedding API)
@@ -111,6 +115,8 @@ pub mod volume;
 pub mod wasapi;
 #[cfg(windows)]
 pub mod wcase;
+#[cfg(windows)]
+pub mod webcam;
 #[cfg(windows)]
 pub mod window;
 #[cfg(windows)]
@@ -230,9 +236,19 @@ fn read_loop(stream: &mut TcpStream) {
                 store(&frame)
             }
             Message::Hello { version, name } => log!("launcher hello: {name} v{version}"),
+            Message::Touch(points) => *TOUCHES.lock().unwrap() = points,
             Message::Output(_) | Message::Relaunch { .. } => {}
         }
     }
+}
+
+/// The launcher's latest touch points (`Message::Touch`).
+static TOUCHES: std::sync::Mutex<Vec<(u16, u16)>> = std::sync::Mutex::new(Vec::new());
+
+/// The fingers on the player's touch surface (the profile's `input.touch`): (x, y), 0 (left /
+/// top) to 65535; empty without one.
+pub fn touches() -> Vec<(u16, u16)> {
+    TOUCHES.lock().unwrap().clone()
 }
 
 fn store(frame: &InputFrame) {

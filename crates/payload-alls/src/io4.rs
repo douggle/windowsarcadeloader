@@ -24,6 +24,8 @@
 //!   shifter's gate (up 5, down 4, left 3, right 2: 1st up + left, 2nd down + left, 3rd up, 4th
 //!   down, 5th up + right, 6th down + right), its gear moved by b7 (up) / b6 (down), neutral 0,
 //!   or held on kp1-kp6 (an H shifter's positions).
+//! - `chusan` (CHUNITHM SUPERSTAR): the six air sensors (`chuni::hand`); the slider is the
+//!   game's (COM1).
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -68,6 +70,7 @@ enum Board {
     Hotd,
     Swdc,
     Idac,
+    Chusan,
 }
 
 fn board() -> Board {
@@ -76,14 +79,18 @@ fn board() -> Board {
         "hotd" => Board::Hotd,
         "swdc" => Board::Swdc,
         "idac" => Board::Idac,
+        "chusan" => Board::Chusan,
         _ => Board::Tokyo,
     })
 }
 
 /// Player 1 starting a game: Initial D THE ARCADE's gas pedal too (pressed past half: the game
-/// starts on it as on start), for the automatic Aime card.
+/// starts on it as on start), Chrono Regalia's touch (`b1`: its attract waits for a touch, its
+/// cabinet has no start button), for the automatic Aime card.
 pub(crate) fn start_pressed(p1: &wal_protocol::StickState) -> bool {
-    p1.pressed(b::START) || (board() == Board::Idac && p1.axis_u16(Axis::Accel) >= 0x8000)
+    static HKB: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let hkb = *HKB.get_or_init(|| std::env::var("WAL_ALLS_BOARD").is_ok_and(|v| v.trim() == "hkb"));
+    p1.pressed(b::START) || (board() == Board::Idac && p1.axis_u16(Axis::Accel) >= 0x8000) || (hkb && p1.pressed(b::B1))
 }
 
 /// The switches of players 1 and 2 from the virtual sticks.
@@ -109,13 +116,34 @@ fn switches() -> [u16; 2] {
         }
         return sw;
     }
+    if board() == Board::Chusan {
+        // CHUNITHM SUPERSTAR's air sensors (amdaemon's photo_sensor_1..6: players 1 and 2's
+        // bits 13, 12, 11), on while their beam is clear, from the lowest (segatools'
+        // chusanhook): beam 0 player 1's bit 13, beam 1 player 2's bit 13...
+        let hand = crate::chuni::hand();
+        for (i, bit) in [13, 13, 12, 12, 11, 11].into_iter().enumerate() {
+            if hand as usize <= i {
+                sw[i % 2] |= 1 << bit;
+            }
+        }
+        return sw;
+    }
     if board() == Board::Idac {
         for (button, bit) in [(b::UP, 5), (b::DOWN, 4), (b::LEFT, 3), (b::RIGHT, 2), (b::START, 7), (b::B1, 1)] {
             if p1 & button != 0 {
                 sw[0] |= 1 << bit;
             }
         }
-        sw[1] = gate(gear(p1));
+        sw[1] = wal_payload_common::hshifter::gate(wal_payload_common::hshifter::gear(p1)) as u16;
+        // `WAL_ALLS_LOG_INPUT=1`: the buttons the launcher sent and the switch bits the
+        // cabinet reports, so a scripted press can be compared with a physical one.
+        if log_input() {
+            static LAST: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+            let cur = sw[0] as u32 | (sw[1] as u32) << 16;
+            if LAST.swap(cur, Ordering::Relaxed) != cur {
+                log!("io4: idac switches={cur:#010x} (up/down/left/right/start/b1 in sw0) buttons={p1:#06x}");
+            }
+        }
         return sw;
     }
     if board() == Board::Hotd {
@@ -160,53 +188,6 @@ fn switches() -> [u16; 2] {
     sw
 }
 
-static GEAR: AtomicU8 = AtomicU8::new(0);
-static GEAR_HELD: AtomicU8 = AtomicU8::new(0);
-
-static POSITIONAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// The H shifter's gear (0 neutral, 1-6), moved one gear by each press of b7 (up) / b6 (down);
-/// an H shifter's positions on kp1-kp6 (segatools' positional shifter): that gear while held,
-/// neutral when released.
-fn gear(buttons: u32) -> u8 {
-    if let Some(n) = (1..=6u8).find(|&n| buttons & (b::KP0 << n) != 0) {
-        POSITIONAL.store(true, Ordering::Relaxed);
-        GEAR.store(n, Ordering::Relaxed);
-        return n;
-    }
-    if POSITIONAL.swap(false, Ordering::Relaxed) {
-        GEAR.store(0, Ordering::Relaxed);
-    }
-    let held = (buttons & b::B7 != 0) as u8 | ((buttons & b::B6 != 0) as u8) << 1;
-    let pressed = held & !GEAR_HELD.swap(held, Ordering::Relaxed);
-    let mut g = GEAR.load(Ordering::Relaxed);
-    if pressed & 1 != 0 && g < 6 {
-        g += 1;
-    }
-    if pressed & 2 != 0 && g > 0 {
-        g -= 1;
-    }
-    GEAR.store(g, Ordering::Relaxed);
-    g
-}
-
-/// The shifter's gate switches for a gear (player 2's word: up 5, down 4, left 3, right 2).
-fn gate(gear: u8) -> u16 {
-    const UP: u16 = 1 << 5;
-    const DOWN: u16 = 1 << 4;
-    const LEFT: u16 = 1 << 3;
-    const RIGHT: u16 = 1 << 2;
-    match gear {
-        1 => UP | LEFT,
-        2 => DOWN | LEFT,
-        3 => UP,
-        4 => DOWN,
-        5 => UP | RIGHT,
-        6 => DOWN | RIGHT,
-        _ => 0,
-    }
-}
-
 static COIN_HELD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn report() -> [u8; 64] {
@@ -229,12 +210,28 @@ fn report() -> [u8; 64] {
         for (i, v) in adc.iter().enumerate() {
             r[1 + i * 2..3 + i * 2].copy_from_slice(&v.to_le_bytes());
         }
+        // `WAL_ALLS_LOG_INPUT=1`: the wheel the cabinet reads, when it turns (logs a
+        // physical wheel turn next to the buttons, to compare with a scripted `lx-`).
+        if log_input() {
+            static LAST: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-100_000);
+            let steer = adc[0] as i32;
+            if (steer - LAST.load(Ordering::Relaxed)).abs() > 3000 {
+                LAST.store(steer, Ordering::Relaxed);
+                log!("io4: idac wheel={steer}");
+            }
+        }
     }
     let sw = switches();
     r[29..31].copy_from_slice(&sw[0].to_le_bytes());
     r[31..33].copy_from_slice(&sw[1].to_le_bytes());
     r[33] = SYSTEM_STATUS.load(Ordering::Relaxed);
     r
+}
+
+/// `WAL_ALLS_LOG_INPUT=1`: log the cabinet input the game reads.
+fn log_input() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("WAL_ALLS_LOG_INPUT").is_ok_and(|v| v.trim() == "1"))
 }
 
 static TRACES: AtomicUsize = AtomicUsize::new(0);

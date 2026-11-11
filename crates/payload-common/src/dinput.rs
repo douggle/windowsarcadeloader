@@ -25,6 +25,8 @@
 //! (`none` for an unused one, `b1+start` pressed by either; default: b1-b8, start, coin,
 //! service, test).
 //! `WAL_DINPUT_WHEEL_FFB=0`: no force feedback (`CreateEffect` unsupported).
+//! `WAL_DINPUT_WHEEL_FFB_OUT=1`: the game's constant force effect (its magnitude, gain and
+//! direction, started / stopped) sent to the launcher's wheel (`output::FFB_CONSTANT`; VCThunder).
 //! The wheel's buffered data (`GetDeviceData`) reports its objects' changes;
 //! `WAL_DINPUT_WHEEL_HEARTBEAT_MS=<ms>` re-reports every axis that often (Visual Pinball takes
 //! an axis silent for 3 s as its nudge board unplugged).
@@ -35,6 +37,11 @@
 //! `DIPROP_INSTANCENAME`) are its product name.
 //! `WAL_DINPUT_WHEEL_VIDPID=<vid>:<pid>` (hex): the USB ids in its product GUID (Blazing Angels
 //! picks its controls layout by the vendor id: the cabinet board's, 1ab7).
+//! `WAL_DINPUT_WHEEL_BUTTON_BASE=0`: its buttons named from `Button 0` (Windows' names), else
+//! from `Button 1`. `WAL_DINPUT_WHEEL_JOYSTICK=1`: a joystick, not a driving device.
+//! `WAL_DINPUT_WHEEL_SYSTEM=1`: the system keyboard and mouse of
+//! [`set_keyboard`] listed and created next to it (Ballistics binds its cabinet's GameFrame by
+//! its product name and buttons' names, and stops without a keyboard device).
 //!
 //! `WAL_DINPUT_PADS=<n>`: the same fake DirectInput, with `n` joysticks (players 1 to `n`, at
 //! most 4): X and Y from the player's d-pad, else its left stick, and the buttons
@@ -518,6 +525,25 @@ unsafe extern "system" fn get_keyboard_state(keys: *mut u8) -> i32 {
     1
 }
 
+/// The fake DirectInput for one more module, loaded after the payload started and not from the
+/// game's directory at load time (VCThunder's `VCThunder.dll`, loaded by its stub executable,
+/// resolves `DirectInput8Create` at run time): its imports and `GetProcAddress`. After [`init`].
+pub fn hook_module(module: usize) {
+    if module == 0 {
+        return;
+    }
+    unsafe {
+        iat::hook_module(module, "dinput.dll", "DirectInputCreateA", create as *const () as usize);
+        iat::hook_module(module, "dinput.dll", "DirectInputCreateW", create_w as *const () as usize);
+        iat::hook_module(module, "dinput.dll", "DirectInputCreateEx", create_iid as *const () as usize);
+        iat::hook_module(module, "dinput8.dll", "DirectInput8Create", create_iid as *const () as usize);
+        let ours = get_proc_address as *const () as usize;
+        if let Some(o) = iat::hook_module(module, "kernel32.dll", "GetProcAddress", ours).filter(|&o| o != ours) {
+            let _ = ORIG_GET_PROC_ADDRESS.compare_exchange(0, o, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
 pub fn init() {
     if std::env::var("WAL_KEYBOARD_STATE_DISABLE").is_ok_and(|v| v.trim() == "1") {
         unsafe { iat::hook("user32.dll", "GetKeyboardState", get_keyboard_state as *const () as usize) };
@@ -630,6 +656,16 @@ mod wheel {
     const AXIS_NAMES: [&str; AXIS_COUNT] = ["X Axis", "Y Axis", "Z Axis", "X Rotation", "Y Rotation", "Z Rotation"];
     /// DI8DEVTYPE_DRIVING, DI8DEVTYPEDRIVING_DUALPEDALS, DIDEVTYPE_HID
     const DEV_TYPE: u32 = 0x16 | 3 << 8 | 0x1_0000;
+    /// `WAL_DINPUT_WHEEL_JOYSTICK=1`: DI8DEVTYPE_JOYSTICK, DI8DEVTYPEJOYSTICK_STANDARD, HID (a
+    /// game taking only joysticks and gamepads: Ballistics' cabinet GameFrame).
+    fn dev_type() -> u32 {
+        static JOYSTICK: OnceLock<bool> = OnceLock::new();
+        if *JOYSTICK.get_or_init(|| std::env::var("WAL_DINPUT_WHEEL_JOYSTICK").is_ok_and(|v| v.trim() == "1")) {
+            0x14 | 2 << 8 | 0x1_0000
+        } else {
+            DEV_TYPE
+        }
+    }
     /// DIDFT_ABSAXIS
     const ABS_AXIS: u32 = 2;
     const DIPROP_RANGE: usize = 4;
@@ -708,6 +744,20 @@ mod wheel {
         NAME.get().map_or("", |n| n.as_str())
     }
 
+    /// `WAL_DINPUT_WHEEL_BUTTON_BASE=0`: the buttons named from `Button 0` (Windows' names of a
+    /// HID device's buttons; Ballistics binds its cabinet's buttons by name), else `Button 1`.
+    fn button_base() -> usize {
+        static BASE: OnceLock<usize> = OnceLock::new();
+        *BASE.get_or_init(|| std::env::var("WAL_DINPUT_WHEEL_BUTTON_BASE").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(1))
+    }
+
+    /// `WAL_DINPUT_WHEEL_SYSTEM=1`: the system keyboard and mouse of [`super::set_keyboard`]
+    /// listed and created next to the wheel (Ballistics stops without a keyboard device).
+    fn system_devices() -> bool {
+        static ON: OnceLock<bool> = OnceLock::new();
+        *ON.get_or_init(|| std::env::var("WAL_DINPUT_WHEEL_SYSTEM").is_ok_and(|v| v.trim() == "1"))
+    }
+
     /// Copies `s` into a fixed string field of `len` characters, ANSI or UTF-16.
     unsafe fn put_str(dst: *mut u8, len: usize, s: &str, wide: bool) {
         unsafe {
@@ -734,7 +784,7 @@ mod wheel {
             std::ptr::copy_nonoverlapping(INSTANCE.as_ptr(), out.add(4), 16);
             let product = guid(VIDPID.load(Ordering::Relaxed), 0, 0, *b"\0\0PIDVID");
             std::ptr::copy_nonoverlapping(product.as_ptr(), out.add(20), 16);
-            (out.add(36) as *mut u32).write_unaligned(DEV_TYPE);
+            (out.add(36) as *mut u32).write_unaligned(dev_type());
             put_str(out.add(40), 260, name(), wide);
             put_str(out.add(40 + 260 * chars), 260, name(), wide);
             // HID usage page 1 (generic desktop), usage 4 (joystick)
@@ -750,10 +800,13 @@ mod wheel {
     /// Whether an `EnumDevices` type filter takes the wheel: all devices, game controllers
     /// (DI8DEVCLASS_GAMECTRL), driving devices.
     fn listed(filter: u32) -> bool {
-        matches!(filter & 0xFF, 0 | 4 | 0x16)
+        matches!(filter & 0xFF, 0 | 4) || filter & 0xFF == dev_type() & 0xFF
     }
 
     unsafe fn enum_devices(filter: u32, cb: EnumCallback, context: P, wide: bool) -> i32 {
+        if system_devices() && !wide {
+            unsafe { super::enum_devices(std::ptr::null_mut(), filter, cb as P, context, 0) };
+        }
         if listed(filter) {
             let mut instance = [0u8; 0x44C];
             let r = unsafe {
@@ -783,6 +836,9 @@ mod wheel {
             return super::DIERR_DEVICENOTREG;
         }
         let is_wheel = !guid.is_null() && unsafe { std::slice::from_raw_parts(guid, 16) } == INSTANCE;
+        if !is_wheel && system_devices() && !wide {
+            return unsafe { super::create_device(std::ptr::null_mut(), guid.cast(), out, std::ptr::null_mut()) };
+        }
         log!("dinput: CreateDevice({})", if is_wheel { "the wheel" } else { "another device" });
         let device: &Object = match (is_wheel, wide) {
             (true, false) => &WHEEL_A,
@@ -831,7 +887,7 @@ mod wheel {
                 // dwFlags, dwDevType, dwAxes, dwButtons, dwPOVs, then the FFB timing fields.
                 let axes = LISTED_AXES.load(Ordering::Relaxed) as u32;
                 let flags = if ffb() { CAPS_FLAGS } else { CAPS_FLAGS & !0x100 };
-                for (i, v) in [flags, DEV_TYPE, axes, 32, 0, 10_000, 1, 1, 1, 0x0001_0000].into_iter().enumerate() {
+                for (i, v) in [flags, dev_type(), axes, 32, 0, 10_000, 1, 1, 1, 0x0001_0000].into_iter().enumerate() {
                     if 4 * (i + 2) <= size {
                         *caps.add(i + 1) = v;
                     }
@@ -876,7 +932,7 @@ mod wheel {
                     std::ptr::copy_nonoverlapping(button_guid.as_ptr(), o.add(4), 16);
                     (o.add(20) as *mut u32).write_unaligned(0x30 + i as u32);
                     (o.add(24) as *mut u32).write_unaligned(4 | (i as u32) << 8);
-                    let label = format!("Button {}", i + 1);
+                    let label = format!("Button {}", i + button_base());
                     put_str(o.add(32), 260, &label, wide);
                     if super::enum_callback(cb, o, context) == 0 { break; }
                 }
@@ -1346,14 +1402,112 @@ mod wheel {
         ok3 as *const (), // Initialize
         effect_get_guid as *const (),
         ok2 as *const (), // GetParameters: keep the game's values
-        ok2 as *const (), // SetParameters
-        ok2 as *const (), // Start
-        ok0 as *const (), // Stop
+        effect_set_parameters as *const (),
+        effect_start as *const (),
+        effect_stop as *const (),
         effect_status as *const (),
         ok0 as *const (), // Download
         ok0 as *const (), // Unload
         ok1 as *const (), // Escape
     ]);
+
+    /// `WAL_DINPUT_WHEEL_FFB_OUT=1`: the game's constant force sent to the launcher's wheel
+    /// (`output::FFB_CONSTANT`, positive to the right): its magnitude (`DICONSTANTFORCE`) times
+    /// its gain and its direction's sign on the one axis, 0 when stopped.
+    fn ffb_out() -> bool {
+        static ON: OnceLock<bool> = OnceLock::new();
+        *ON.get_or_init(|| std::env::var("WAL_DINPUT_WHEEL_FFB_OUT").is_ok_and(|v| v.trim() == "1"))
+    }
+    /// The constant force's magnitude, gain (0..10000) and direction sign; it plays.
+    static FORCE: AtomicI32 = AtomicI32::new(0);
+    static GAIN: AtomicI32 = AtomicI32::new(10000);
+    static SIGN: AtomicI32 = AtomicI32::new(1);
+    static PLAYING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static SENT: AtomicI32 = AtomicI32::new(i32::MIN);
+
+    /// `DIEFFECT`
+    #[repr(C)]
+    struct DiEffect {
+        size: u32,
+        flags: u32,
+        duration: u32,
+        sample_period: u32,
+        gain: u32,
+        trigger_button: u32,
+        trigger_repeat_interval: u32,
+        axes: u32,
+        axis_ids: *const u32,
+        direction: *const i32,
+        envelope: P,
+        type_specific_size: u32,
+        type_specific: *const i32,
+    }
+    const DIEP_GAIN: u32 = 0x04;
+    const DIEP_DIRECTION: u32 = 0x40;
+    const DIEP_TYPESPECIFICPARAMS: u32 = 0x100;
+    const DIEP_START: u32 = 0x2000_0000;
+
+    fn send_force() {
+        let value = if PLAYING.load(Ordering::Relaxed) {
+            let v = FORCE.load(Ordering::Relaxed) as i64 * GAIN.load(Ordering::Relaxed) as i64 / 10000 * SIGN.load(Ordering::Relaxed) as i64;
+            v.clamp(-(wal_protocol::output::FFB_MAX as i64), wal_protocol::output::FFB_MAX as i64) as i32
+        } else {
+            0
+        };
+        if SENT.swap(value, Ordering::Relaxed) != value {
+            static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if value != 0 && !LOGGED.swap(true, Ordering::Relaxed) {
+                log!("dinput: the game's constant force to the launcher (first: {value})");
+            }
+            crate::send_output(0, wal_protocol::output::FFB_CONSTANT, value);
+        }
+    }
+
+    /// The parameters of a constant force effect (`flags`: those set).
+    unsafe fn take_parameters(effect: *const DiEffect, flags: u32) {
+        if effect.is_null() || !ffb_out() || EFFECT_GUID.lock().unwrap()[..4] != 0x1354_1C20u32.to_le_bytes() {
+            return;
+        }
+        let e = unsafe { &*effect };
+        if flags & DIEP_GAIN != 0 {
+            GAIN.store(e.gain.min(10000) as i32, Ordering::Relaxed);
+        }
+        if flags & DIEP_DIRECTION != 0 && !e.direction.is_null() && e.axes >= 1 {
+            let d = unsafe { e.direction.read_unaligned() };
+            SIGN.store(if d < 0 { -1 } else { 1 }, Ordering::Relaxed);
+        }
+        if flags & DIEP_TYPESPECIFICPARAMS != 0 && !e.type_specific.is_null() && e.type_specific_size >= 4 {
+            FORCE.store(unsafe { e.type_specific.read_unaligned() }, Ordering::Relaxed);
+        }
+        if flags & DIEP_START != 0 {
+            PLAYING.store(true, Ordering::Relaxed);
+        }
+        send_force();
+    }
+
+    /// `SetParameters(lpeff, dwFlags)`
+    unsafe extern "system" fn effect_set_parameters(_this: P, effect: *const DiEffect, flags: u32) -> i32 {
+        unsafe { take_parameters(effect, flags) };
+        DI_OK
+    }
+
+    /// `Start(dwIterations, dwFlags)`
+    unsafe extern "system" fn effect_start(_this: P, _iterations: u32, _flags: u32) -> i32 {
+        PLAYING.store(true, Ordering::Relaxed);
+        if ffb_out() {
+            send_force();
+        }
+        DI_OK
+    }
+
+    /// `Stop()`
+    unsafe extern "system" fn effect_stop(_this: P) -> i32 {
+        PLAYING.store(false, Ordering::Relaxed);
+        if ffb_out() {
+            send_force();
+        }
+        DI_OK
+    }
 
     unsafe extern "system" fn effect_get_guid(_this: P, out: P) -> i32 {
         if !out.is_null() {
@@ -1387,6 +1541,8 @@ mod wheel {
         } else {
             log!("dinput: fake FFB effect created");
         }
+        // the creation's parameters (all of them: those the structure holds)
+        unsafe { take_parameters(_effect as *const DiEffect, DIEP_GAIN | DIEP_DIRECTION | DIEP_TYPESPECIFICPARAMS) };
         unsafe { *out = &EFFECT as *const Object as P };
         DI_OK
     }

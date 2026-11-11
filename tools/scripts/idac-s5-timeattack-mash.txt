@@ -1,0 +1,72 @@
+# Initial D THE ARCADE Season 5 — mash into a Time Attack race (Mode :2).
+#
+#   ./dist/arcade-launcher run "<dump>/initial-d-the-arcade-season-5.windowsloader" \
+#     --input-script tools/scripts/idac-s5-timeattack-mash.txt --no-input --headless
+#
+# The mash script's START pulses land on Story (CreateRace Mode :1). LEFT+START pairs cover
+# the window in which the mode-select screen appears (measured at ~70-80 s of script time, so
+# a plain mash's LAST start confirms the default Story), then START pulses finish course/car/
+# connect and the gas is held through the countdown.
+
+12.0 p1 coin
+12.4 p1 -
+20.0 p1 coin
+20.4 p1 -
+28.0 p1 coin
+28.4 p1 -
+36.0 p1 start
+36.5 p1 -
+39.0 p1 start
+39.5 p1 -
+42.0 p1 start
+42.5 p1 -
+45.0 p1 start
+45.5 p1 -
+48.0 p1 start
+48.5 p1 -
+51.0 p1 start
+51.5 p1 -
+54.0 p1 start
+54.5 p1 -
+58.0 p1 lx- left
+58.5 p1 -
+59.0 p1 start
+59.5 p1 -
+61.0 p1 lx- left
+61.5 p1 -
+62.0 p1 start
+62.5 p1 -
+64.0 p1 lx- left
+64.5 p1 -
+65.0 p1 start
+65.5 p1 -
+67.0 p1 lx- left
+67.5 p1 -
+68.0 p1 start
+68.5 p1 -
+70.0 p1 lx- left
+70.5 p1 -
+71.0 p1 start
+71.5 p1 -
+73.0 p1 lx- left
+73.5 p1 -
+74.0 p1 start
+74.5 p1 -
+76.0 p1 lx- left
+76.5 p1 -
+77.0 p1 start
+77.5 p1 -
+79.0 p1 lx- left
+79.5 p1 -
+80.0 p1 start
+80.5 p1 -
+82.0 p1 lx- left
+82.5 p1 -
+83.0 p1 start
+83.5 p1 -
+85.0 p1 lx- left
+85.5 p1 -
+86.0 p1 start
+86.5 p1 -
+90.0 p1 accel
+235.0 p1 -

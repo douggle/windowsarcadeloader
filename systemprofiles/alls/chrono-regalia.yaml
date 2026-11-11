@@ -1,0 +1,107 @@
+# Chrono Regalia (Sega, ALLS, 2019; game id SDEC, version 1.30): a Unity card battle game,
+# 64-bit Direct3D 11, 1920x1080. One player at a satellite seat: the touch screen, the
+# cabinet's buttons, an Aime card reader.
+# amdaemon.exe (the cabinet's system service) is started first, then the game, both with the
+# payload: the keychip and the USB I/O board (coins, test, service) emulated in amdaemon.
+# Override values in userprofiles/alls/chrono-regalia.yaml.
+system: alls
+name: Chrono Regalia
+
+# both programs started by wal-loader64 with the payload
+payload_loader: true
+# game.bat's launch (its log in Y:\SDEC\log), the profile's configuration of the game
+# (HkbSystemConfig_wal.json: the touch panel and the LED board off, the game reads the mouse)
+args: [-c, HkbSystemConfig_wal.json, -logFile, "Y:\\SDEC\\log\\abaas\\output\\output_log.txt", -screen-fullscreen, "0", -screen-quality, Fantastic, -silent-crashes]
+
+# game.bat's amdaemon command line (from bin\), the satellite's configuration, the profile's
+# configuration last
+background:
+  - amdaemon.exe -c common.json satellite.json config_wal.json -l Y:\SDEC\log\amdaemon.log
+background_wait_ms: 3000
+
+# amdaemon's video setup off (the launcher sets the screen), the e-money terminal absent,
+# ALL.Net accounting off (its billing server is absent)
+files:
+  App/bin/config_wal.json: systemprofiles/alls/files/chrono-regalia/config_wal.json
+  App/bin/HkbSystemConfig_wal.json: systemprofiles/alls/files/chrono-regalia/HkbSystemConfig_wal.json
+
+# The cabinet's drives: E: the AMFS (the system backup amdaemon keeps), X: the game's image,
+# Y: the game's data (its backup, logs)
+drives:
+  e: amfs
+  x: App
+  y: AppData
+
+env:
+  WAL_ALLS_GAME_ID: SDEC
+  # the store's closing hours never reached (the operator's setting, by default 24:00 to the
+  # game day's 07:00 start, the last hour limiting CP purchases and logins): each day passes as
+  # Japan's 07:00 to 23:00 (segatools' timewarp, payload clock.rs, in the game's Mono too)
+  WAL_ALLS_TIMEWARP: "1"
+  # the satellite seat (the keychip's model type 2; 4 is the store's terminal)
+  WAL_ALLS_PLATFORM_ID: ACA2
+  WAL_ALLS_SUBNET: 192.168.155.0
+  WAL_ALLS_HOST: "2"
+  WAL_ALLS_BOARD: hkb
+  # the touch pointer: a small red dot where the mouse or gun touches (payload hkb.rs)
+  WAL_CROSSHAIR: "1"
+  # the Aime card reader (satellite.json's unit)
+  WAL_ALLS_AIME_PORT: COM3
+  # the card touched by itself at the login screen, 3 s after the touch that leaves the attract
+  # (payload aime.rs, io4.rs: the touch counts as start)
+  WAL_ALLS_AUTO_CARD: "1"
+  WAL_ALLS_AUTO_CARD_DELAY_MS: "3000"
+  # online: ALL.Net accepted, the Aime cards (AimeDB) and the players' data (the game server,
+  # payload hkb/server.rs, its players in AppData\hkb) answered by the payload. "0": offline
+  # (guests only, Story mode).
+  WAL_ALLS_ALLNET: "1"
+  # the game server's URI: the payload's server itself (the game's Mono sockets are not
+  # redirected)
+  WAL_ALLS_TITLE_URI: http://{gs}
+
+input:
+  guns_enabled: true
+  stick_as_dpad: false
+
+controls:
+  lx: Touch screen (x)
+  ly: Touch screen (y)
+  b1: Touch
+  card: Aime card
+  start: Start
+  coin: Coin
+  service: Service
+  test: Test
+
+options:
+  - title: Touch screen
+    options:
+      - key: WAL_CROSSHAIR
+        label: Touch pointer
+        kind: bool
+        description: >-
+          A small red dot where the mouse or gun touches (the game shows no cursor).
+  - title: Aime card
+    options:
+      - key: WAL_ALLS_AUTO_CARD
+        label: Touch the card automatically
+        kind: bool
+        description: >-
+          After the touch that leaves the attract, the Aime card is touched by itself at the
+          login screen (the player's data saved on the game server). Off: touch it with the card
+          button, or play as a guest.
+      - key: WAL_ALLS_ALLNET
+        label: Card players' data (online)
+        kind: bool
+        description: >-
+          The Aime card players and their data, kept by the payload's game server. Off: the
+          game is offline, guests only (Story mode, nothing saved).
+  - title: Clock
+    options:
+      - key: WAL_ALLS_TIMEWARP
+        label: Skip the store's closing hours
+        kind: bool
+        description: >-
+          The game closes the store at midnight until 7:00 (Japan's time), limiting CP purchases
+          and logins in its last hour: on (the default), the game's clock never reaches those
+          hours.
