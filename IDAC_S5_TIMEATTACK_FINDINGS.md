@@ -429,11 +429,33 @@ Two things follow from the last two rows:
 The rest of the earlier sections is unchanged by this: the only budget write is still the green-light
 refund of `+0x538`, and nothing rewrites the elapsed stamps (`GetRaceTime` stays consistent).
 
-### Still open: Time Attack's checkpoint time bonuses
+### Time Attack's checkpoint bonuses do work (the "still open" note this replaces was wrong)
 
-Time Attack extends its clock from checkpoints, and the sections above show that IndRun's progress
-tracking for the player car never advances under the loader (`Standing`, no `Checkpoint passed`,
-`Max:[1]:0`). A Time Attack therefore runs on its base budget (+ the goal path) without those
-extensions: the spurious cancel no longer cuts it short, but the checkpoint bonuses are still not
-being added. That is the remaining Time Attack problem, and it is the same progress feed described in
-UPDATE — it needs a live debugger on the race-update loop, not another `WAL_PATCHES` guess.
+Re-checked on a driven Time Attack after the retire fix: IndRun's player car registers progress and
+the game extends the clock. From that run's log:
+
+```
+indrun: Actor:000000000E2E67C0 Standing(time:-200000)                       # at the lights
+indrun: Actor:000000000E2E67C0 Checkpoint 0 passed (time:93859) (sectiontime:93859)
+indrun: Actor:000000000E2E67C0 Checkpoint 1 passed (time:191497) (sectiontime:97638)
+indstate clock: rem 30176 -> 39296 -> 62816 -> 86336 -> 109856 -> 127872
+```
+
+Five jumps against `+0x538` of +9120 / +23520 / +23520 / +23520 / +18016 ms: about 89 s added to a
+~122 s base. Those are the checkpoint bonuses, and that race went on to the goal (`state=5
+end=0x0`).
+
+So the "Standing / no checkpoint / section 0" symptom in UPDATE and UPDATE 2 is **not** the current
+behaviour. Between those runs and this one the profile was rebased onto upstream's Season 5 support,
+which makes the three race-setting check values the constants IndRun expects (`0x6e23af` /
+`0x6e241d`) and removes IndRun's date limit. With those the car's race state advances.
+
+The payload's own control feed is **not** what does it: `indctl` (`WAL_ALLS_INDRUN_INPUT`) is not
+enabled in the profile and logs nothing in these runs, so the progress comes from the game's own
+`SetAccel` / `SetSteer` reaching IndRun once its checks pass — the opposite of the UPDATE-era
+conclusion that the pedals never arrived.
+
+Which piece is load-bearing is still not separated by an experiment: with `WAL_ALLS_INDRUN_RESET`
+and `WAL_ALLS_INDRUN_RETIRE` both off, a Time Attack would show whether the checks alone are
+enough. Until then, read the Standing analysis in UPDATE as historical (it describes the pre-rebase
+profile), not as the current mechanism.
