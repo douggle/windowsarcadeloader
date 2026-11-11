@@ -445,6 +445,12 @@ Five jumps against `+0x538` of +9120 / +23520 / +23520 / +23520 / +18016 ms: abo
 ~122 s base. Those are the checkpoint bonuses, and that race went on to the goal (`state=5
 end=0x0`).
 
+Timing detail, because it changes how the add works: all five jumps land within 2.3 s of
+`Checkpoint 0 passed` (t=1794375086.4), and `Checkpoint 1 passed` (t=1794375184.0, 98 s later) adds
+nothing. So the time is credited in one burst at the first checkpoint (the sections the car covered
+while the tracking caught up), not one bonus per checkpoint. The race object's `bonus` and `pool`
+fields stay 0 throughout, so the add does not go through them.
+
 So the "Standing / no checkpoint / section 0" symptom in UPDATE and UPDATE 2 is **not** the current
 behaviour. Between those runs and this one the profile was rebased onto upstream's Season 5 support,
 which makes the three race-setting check values the constants IndRun expects (`0x6e23af` /
