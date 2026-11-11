@@ -2,7 +2,90 @@
 
 Status: **diagnosed deeply, not fixed.** The sections below are in investigation order; the
 **UPDATE** immediately below supersedes the earlier "refill / verdict" theories — those were ruled
-out by live instrumentation.
+out by live instrumentation. **UPDATE 2** (next) retires the course-path lead of UPDATE step 6 and
+narrows the search to the course setting's `.pa4` paths and the sim car state.
+
+---
+
+> **Rebased onto upstream.** `aderumier/windowsarcadeloader` now ships its own Season 5 support
+> (`ff17b52`, SDGT 3.10). It fixes the same race differently from this branch: instead of stubbing
+> the anti-tamper verdict, it makes the three race-setting check values the constants IndRun
+> expects (`0x6e23af` / `0x6e241d`: `mov al,1`) and removes IndRun's date limit. Its note is that
+> with wrong checks "the player's car is driven by IndRun (steering ignored, the pedals barely
+> felt), and its race start state never advances" — the same family of symptom this document
+> chased. The verdict-stub `WAL_PATCHES` below is therefore obsolete and the profile is upstream's;
+> the modules kept from this branch (`indctl.rs`, `indlog.rs`, `indstate.rs`) are diagnostics only.
+> Re-check the symptom on the rebased profile before trusting the chain below.
+
+## UPDATE 2 — the "missing course path" lead is ruled out (static proof); where the path data really comes from
+
+The `+0x48` racing-line theory of UPDATE step 6 does not hold. `[*(IndRun+0x21c358)]+0x48` is
+written by exactly one function: the `LoadPathPoint` export (`0x611b0`). It allocates a path
+object, stores it at `+0x48`, releases the old one, and tail-jumps to the loader `0x5b810`, which
+opens `[*(IndRun+0x21c700)+0x20c8]` (the app root the game passes to `Start`) + the name it was
+given, with `fopen_s`, and logs `Load Path %s.`. But:
+
+- the Season 5 game EXE (`GameProject-Win64-Shipping.exe`) **does not import** `LoadPathPoint`,
+  `UnLoadPathPoint` or `GetPathPointsNum`, and contains **no such strings** (its `GetPathPoint`
+  hits are UE4 spline names: `GetPathPoints`, `GetPathPoint`, `UpdateCoursePath`);
+- a call/jmp scan of `IndRun.dll`'s `.text` finds calls to the loader `0x5b810` only at `0x59685`,
+  `0x5a4f3`, `0x5a508`, `0x61281` (the export's own tail) and `0x69115` — never from a caller of
+  the `LoadPathPoint` export;
+- Season 3 has the same dead export (its EXE does not import it either) and its Time Attack tracks
+  checkpoints and extends the clock normally.
+
+So a null `+0x48` is the normal state in **both** seasons: `GetPathPointsNum`/`GetPathPoint` are a
+unused (debug/test) API, not the race's racing line. Nothing to fix there — drop the lead.
+
+Where IndRun actually gets course path data:
+
+- **The game's course setting.** The setter just before `AddCourseSetting` (`0x5a3c0` region) takes
+  two `std::string` names, bails if either is empty (`cmp byte [name],0; je`), allocates a path
+  object at `[courseSetting+0x58]` and `[courseSetting+0x60]`, loads each with `0x5b810`, and only
+  when both succeed sets `[courseSetting+0x68] = 1` ("course paths loaded"). Those names are the
+  `[F]/[B] …PathName` fields of `stCourseSetting`, which `AddCourseSetting` logs:
+  `[F] ColliPathName`, `[F] CenterPathName`, `[F] LeftPathName`, `[F] RightPathName`, and the four
+  `[B]` ones. The `.pa4` files exist in the dump at
+  `App/DAC/WindowsNoEditor/GameProject/Plugins/IndRun/Content/COURSE/<course>/path/`
+  (`akina_cmn_path_road_c.pa4`, `hakone_path_road_l.pa4`, …), so the data is present; the question
+  is whether the game passes usable names and whether `fopen_s` resolves them from the app root.
+- **A debug/test loader** at `0x69115` falls back to the hardcoded
+  `./data/COURSE/akina_lake/path/akinaLake_path_road_l.pa4` when a `Selector` setting is absent.
+  Dev-only; not the arcade path.
+
+This leaves a much narrower question than "the spline is missing": does the game send the
+`stCourseSetting` path names under the loader, and does the loader find the files from the app
+root (`Start`'s string, `[*(0x21c700)+0x20c8]`)? An empty name set, or an app root that does not
+resolve, leaves the course without its road/collision paths — the "game draws the car where it
+thinks it is, IndRun never sees progress" symptom.
+
+### Instrumentation added with UPDATE 2
+
+- `crates/payload-alls/src/indlog.rs`: the keep list now includes the course-setting path lines and
+  `Load Path`, and those two formats are formatted with their `%s` argument (they are C strings
+  IndRun itself dereferences), so a run prints the path names the game sends and the exact file
+  IndRun opens.
+- `crates/payload-alls/src/indstate.rs` (`WAL_ALLS_INDRUN_STATE=1`): while the race state `+0x668`
+  is 4 (racing), calls `cUE4Interface::FindCarStateInfo(0)` (`IndRun.dll+0x60c90`, struct through
+  the hidden return pointer in `rcx`) every 500 ms and logs the first `0x40` bytes when they
+  change. A frozen sample while the on-screen car moves proves the sim never runs; samples that
+  change move the target past the sim, to the checkpoint/section code.
+- `userprofiles/alls/initial-d-the-arcade-season-5.yaml` sets `WAL_ALLS_INDRUN_STATE: "1"`.
+
+### The one run that decides it
+
+One S5 Time Attack race (`./dist/arcade-launcher run "<dump>/initial-d-the-arcade-season-5.windowsloader"`),
+then in `wal-alls.log`:
+
+1. `[F]/[B] …PathName : …` — are the names empty, relative, or full paths?
+2. `Load Path …` — which file does IndRun open, and does it exist in the run directory Wine uses
+   as the app root (`wine-prefix/full/drive_c/...`, mirrored from the dump)?
+3. `indstate: car state …` — does the sim's car state change at all?
+
+Then: names empty → the game's `stCourseSetting` is not being filled (course data or a patch); a
+wrong/missing `Load Path` → fix the app root string(`[0x21c700]+0x20c8`) or the name the game
+passes; sim state changing but still no `Checkpoint passed` → the fault is after the sim, in the
+checkpoint/section code (`0x6ed90`, `0x7ece0`).
 
 ---
 
@@ -221,6 +304,9 @@ back to its writer), which is how the author did the original anti-tamper work.
 
 ## Recommended next step (for whoever finishes it)
 
+> Superseded by UPDATE 2 at the top: the path-spline step below is ruled out. Use UPDATE 2's run
+> (path names + `Load Path` + sim car state) instead.
+
 1. With `WAL_ALLS_INDLOG=0x1df0` active, attach a debugger and breakpoint the caller of the
    Standing handler (`~0x6ed70`) / Checkpoint handler (`0x6ed90`); read the car-progress/pointer
    field it tests and find its per-tick writer. That writer (or its missing input) is the fix site.
@@ -239,3 +325,46 @@ back to its writer), which is how the author did the original anti-tamper work.
   `0x766d5:EB` entry). Delete that `env:` block to restore the shipped behaviour.
 - The S3 user override currently has `WAL_ALLS_AUTO_CARD: "0"` (the S3 auto-card hit
   `ERROR 6504 Illegal Card Found`); delete that `env:` block to restore the auto-card.
+
+## Season 5 story races ending seconds after the start
+
+A Story race used to end with `RaceFinish … eNORMAL` a few seconds after `RaceStart`, reported as
+`state=6`, end type `0x1`, finished flag `+0x53c` untouched, with over 100 s still on the clock.
+
+- `cUE4Interface::RetireRace(eRetireRaceType)` (`IndRun.dll+0x5ede0`) is what ends it. Its type-1
+  path (`sub edx,1; je 0x5ee16`) runs `movl $0xffffffff,0x538(%rax)`: it stores `-1` into the
+  remaining race time. The clock updater (`0x7b820`) subtracts the elapsed time and finishes the
+  race on its next tick (`+0x668 = 6`, `+0xacc = 1`, `+0x53c` left alone). Types 2 and 3 tail-jump
+  to `0x7c1e0` with their own end code instead.
+- The call that matters arrives **before** the lights (`state=3`), leaving `-1` for the race that
+  is about to start, so the first tick of the race already has nothing left. The elapsed stamps
+  are correct at the green light (`+0x518 - +0x520` = 11 ms; the game logs the same value as
+  `StartRace:<ms>`), which is why rewriting them is wrong: `GetRaceTime` (`0x5ee60`) subtracts
+  `+0x584 + +0x57c + +0x520 + +0x51c` from `+0x518`, so stamping them negative-times the clock and
+  the game ends the race itself.
+- The timer finishes only through two branches into `0x7b9f0`: `0x7b95e` (`ecx < 1`, not mode 5)
+  and `0x7b946` (mode 5, `ecx < -2000`, stored back as `0xfffff830`). Both need the remaining
+  time at or below zero, which a race with 111 s left cannot reach.
+
+Fixes, all in the payload's `indstate` module:
+
+- `WAL_ALLS_INDRUN_RESET=1`: on entry to the racing state refund `+0x538` to the largest value
+  seen for that race (the seeded budget, `0x7b2e0`). Nothing else is written.
+- `WAL_ALLS_INDRUN_RETIRE=<ms>` (default 45 s): a detour on `0x5ede0` that drops the type-1 early
+  cancel while the race is in state 4 and younger than the window; types 2/3, calls outside the
+  racing state and later calls go to the original, so quitting still works. The prologue is
+  `mov rax,[IndRun.dll+0x21c720]` (RIP-relative), so the trampoline re-encodes it as
+  `mov rax, moffs64` and jumps back to `+0x5ede0+7`.
+- The profile's `IndRun.dll!0x793a6:EB1B` patch is gone: it turned the goal range check into an
+  unconditional jump, which made the `state = 5` store at `0x793a8` unreachable, so Story races
+  could only ever end as a time-up. `0x7938c:7435` stays and still skips the null goal table.
+
+Verified with a driven Story race: `Checkpoint 0 passed (time:79124)`, `Checkpoint 2 passed
+(time:133469)`, then `state=5 end=0x0` and `RaceFinish ゲームモード: StoryMode 終了タイプ : eNORMAL`.
+An unattended race now runs 125 s and ends at the clock (`state=6 end=0x1` at `rem=240`), and the
+only `RetireRace` it issued was the pre-start `type=1` one, which passes through.
+
+Season 3 comparison (`IndRun.dll` 2,174,464 B, PE 2024-01-19) shows the same code with a uniform
++8 field shift (`0x510` → `0x518`, `0x660` → `0x668`, `0x530` → `0x538`, `0x56c` → `0x574`,
+`0x10d8`/`0x10e8` → `0x1100`/`0x1104`): `GetRaceTime`, the timer and the goal block are identical,
+so none of the Season 5 workarounds are Season 5-specific bugs.

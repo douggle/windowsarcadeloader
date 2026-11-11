@@ -18,12 +18,12 @@ payload_loader: true
 # without the URL's folders (/Get instead of /230/initiald/Alive/Get).
 args: [launch=Cabinet, -Master, -culture=en, -ResX=1920, -ResY=1080, -NotInstalled]
 
-# boot.bat's amdaemon command line (every config_*.json of its folder, from the game's folder),
-# the profile's configuration last
+# The cabinet's amdaemon command line (every config_*.json of its folder, as @amdaemon.bat: it
+# runs from that folder), the profile's configuration last
 background:
   - >-
-    ../../../../AMDaemon/amdaemon.exe -c ..\..\..\..\AMDaemon\config_aime_high_ex.json ..\..\..\..\AMDaemon\config_aime_high_jp.json ..\..\..\..\AMDaemon\config_aime_normal_ex.json ..\..\..\..\AMDaemon\config_aime_normal_jp.json ..\..\..\..\AMDaemon\config_common.json ..\..\..\..\AMDaemon\config_ex.json ..\..\..\..\AMDaemon\config_jp.json ..\..\..\..\AMDaemon\config_laninstall_client_ex.json ..\..\..\..\AMDaemon\config_laninstall_client_jp.json ..\..\..\..\AMDaemon\config_laninstall_server_ex.json ..\..\..\..\AMDaemon\config_laninstall_server_jp.json ..\..\..\..\AMDaemon\config_seat_1_ex.json ..\..\..\..\AMDaemon\config_seat_1_jp.json ..\..\..\..\AMDaemon\config_seat_2_ex.json ..\..\..\..\AMDaemon\config_seat_2_jp.json ..\..\..\..\AMDaemon\config_seat_3_ex.json ..\..\..\..\AMDaemon\config_seat_3_jp.json ..\..\..\..\AMDaemon\config_seat_4_ex.json ..\..\..\..\AMDaemon\config_seat_4_jp.json ..\..\..\..\AMDaemon\config_seat_single_ex.json ..\..\..\..\AMDaemon\config_seat_single_jp.json
-    ..\..\..\..\AMDaemon\config_wal.json -l Y:\amdaemon.log
+    ../../../../AMDaemon/amdaemon.exe -c config_aime_high_ex.json config_aime_high_jp.json config_aime_normal_ex.json config_aime_normal_jp.json config_common.json config_ex.json config_jp.json config_laninstall_client_ex.json config_laninstall_client_jp.json config_laninstall_server_ex.json config_laninstall_server_jp.json config_seat_1_ex.json config_seat_1_jp.json config_seat_2_ex.json config_seat_2_jp.json config_seat_3_ex.json config_seat_3_jp.json config_seat_4_ex.json config_seat_4_jp.json config_seat_single_ex.json config_seat_single_jp.json
+    config_wal.json -l Y:\amdaemon.log
 background_wait_ms: 5000
 
 # amdaemon's video setup off (the launcher sets the screen), the e-money terminal absent, the
@@ -93,7 +93,7 @@ env:
   # IndRun.dll's date limit: after 2026-06-26 (localtime packed as ((year-2022)<<16 |
   # (month+4)<<8 | day+5) > 0x4091f) a check value of its race settings is spoiled, the check
   # (+0x7c8b0) answers 0x8c and every car's physics step adds a penalty. Its jump (ja) removed.
-  WAL_PATCHES: "0x6e23af:B001909090,0x6e241d:B001909090,IndRun.dll!0x74c98:9090"
+  WAL_PATCHES: "0x6e23af:B001909090,0x6e241d:B001909090,IndRun.dll!0x74c98:9090,IndRun.dll!0x7938c:7435,IndRun.dll!0x704b0:31C0C3"
   # a borderless 16:9 window centered on the screen: the game lays its interface out for 16:9
   # (on a 16:10 screen its right side was cut: the start prompt)
   WAL_WINDOW_POPUP: "1"

@@ -728,6 +728,10 @@ fn run(profile: &Profile, opts: &RunOptions, script: Option<script::Script>) -> 
         // the payload log the background program created: the game's lines appended to it
         cmd.env("WAL_LOG_APPEND", "1");
     }
+    // the script's step times count from the game's start, not from when it was read
+    if let Some(s) = &script {
+        s.restart();
+    }
     let mut child = cmd.spawn().context("starting wine")?;
     // its window to the front (a frontend keeping the focus hid it)
     let mut focus = if opts.headless { None } else { focus::Focus::new(child.id()) };

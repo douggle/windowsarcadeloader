@@ -30,7 +30,9 @@ struct Held {
 pub struct Script {
     /// (time, player, held inputs), sorted by time.
     steps: Vec<(f64, usize, Held)>,
-    start: Instant,
+    /// When the game started: the step times are counted from there, so a script lands in the
+    /// same menu whatever the launcher did before (prefix, background programs, gamescope).
+    start: std::cell::Cell<Instant>,
 }
 
 impl Script {
@@ -78,12 +80,17 @@ impl Script {
         }
         steps.sort_by(|a, b| a.0.total_cmp(&b.0));
         eprintln!("script: {} steps from {}", steps.len(), path.display());
-        Ok(Script { steps, start: Instant::now() })
+        Ok(Script { steps, start: std::cell::Cell::new(Instant::now()) })
+    }
+
+    /// Count the step times from now: called when the game is started.
+    pub fn restart(&self) {
+        self.start.set(Instant::now());
     }
 
     /// Apply the inputs currently held by the script for `player` to its stick.
     pub fn apply(&self, player: usize, stick: &mut StickState) {
-        let now = self.start.elapsed().as_secs_f64();
+        let now = self.start.get().elapsed().as_secs_f64();
         let Some((_, _, held)) = self.steps.iter().filter(|(t, p, _)| *p == player && *t <= now).next_back() else {
             return;
         };

@@ -74,13 +74,33 @@ unsafe extern "C" {
 // vsnprintf a format with plain integer/pointer conversions — anything with a float or string
 // conversion is logged as its raw template instead (still tells us it fired, and the values we
 // care about — checkpoint index, time, sectiontime — are all %d/%p).
-const KEEP: [&str; 8] = ["passed", "heckPoint", "heckpoint", "Standing", "setCurrentSection", "borted", "StartRace", "oalIn"];
+const KEEP: [&str; 10] = [
+    "passed",
+    "heckPoint",
+    "heckpoint",
+    "Standing",
+    "setCurrentSection",
+    "borted",
+    "StartRace",
+    "oalIn",
+    // the course setting IndRun receives (AddCourseSetting): the .pa4 path names it then loads
+    "PathName",
+    // the loader's "Load Path %s.": the file it opens (app root + the course's path name)
+    "Load Path",
+];
 
 // A `%s`/`%ls` conversion reads its argument as a pointer-to-string, which can fault; those
 // formats are logged as their raw template instead. Floats (`%f`) are now safe to format (the
 // stub preserves registers), so the per-tick `PlayerPointer` progress line can be read.
 fn string_fmt(t: &str) -> bool {
     t.contains("%s") || t.contains("%ls") || t.contains("%S")
+}
+
+/// Formats whose `%s` arguments are C strings IndRun itself dereferences (the course setting's
+/// path names and the path loader's file name): those are formatted instead of logged as their
+/// template, which is what tells us whether the game sends usable course paths at all.
+fn known_string_arg(t: &str) -> bool {
+    (t.contains("PathName") || t.contains("Load Path")) && !t.contains("%ls") && !t.contains("%S")
 }
 
 static TICK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -100,7 +120,7 @@ extern "C" fn indlog_va(fmt: *const c_char, args: *const c_void) {
     } else if !KEEP.iter().any(|k| template.contains(k)) {
         return;
     }
-    if string_fmt(&template) {
+    if string_fmt(&template) && !known_string_arg(&template) {
         log!("indrun: {}", template.trim_end());
         return;
     }
@@ -127,13 +147,21 @@ fn parse_hex(s: &str) -> Option<usize> {
 }
 
 /// `base` is the loaded `IndRun.dll`. Installs the logger un-stub if `WAL_ALLS_INDLOG` is set.
+///
+/// The patch waits for IndRun's first live race: its boot (`ABootSequence::SetupRecords`) logs
+/// course paths that do not exist yet, and formatting one of those `%s` arguments faults the
+/// game into its error mode ("Error 4104 / Unexpected Error Occurred").
 pub(crate) fn install(base: usize) {
-    if let Some(rva) = std::env::var("WAL_ALLS_INDLOG").ok().and_then(|v| parse_hex(&v)) {
-        unsafe { jump_to(base, rva, indlog_stub as *const () as usize) };
-        log!("indlog: IndRun log function un-stubbed at IndRun.dll+{rva:#x}");
-    }
-    if std::env::var("WAL_ALLS_INDLOG_STATE").is_ok() {
-        poll_state(base);
+    let rva = std::env::var("WAL_ALLS_INDLOG").ok().and_then(|v| parse_hex(&v)).filter(|rva| *rva != 0);
+    if std::env::var("WAL_ALLS_INDLOG_STATE").is_ok_and(|v| v.trim() == "1") {
+        poll_state(base, rva);
+    } else if let Some(rva) = rva {
+        // no race state poller to wait on: patch once the boot sequence is over
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            unsafe { jump_to(base, rva, indlog_stub as *const () as usize) };
+            log!("indlog: IndRun log function un-stubbed at IndRun.dll+{rva:#x}");
+        });
     }
 }
 
@@ -194,12 +222,13 @@ unsafe fn read_controls(ctrl_singleton: usize) -> Option<(u8, i8)> {
 /// steer the game actually feeds IndRun — to see whether the race reaches state 4 (racing) and
 /// whether the car controls reach IndRun's sim at all (if accel stays 0 while driving, the
 /// controls never reach IndRun → its car never moves → "Standing" → no progress).
-fn poll_state(base: usize) {
+fn poll_state(base: usize, rva: Option<usize>) {
     let singleton = base + 0x21c720;
     let ctrl_singleton = base + 0x21c718;
     let path_singleton = base + 0x21c358;
     std::thread::spawn(move || {
         let mut last: i64 = -2;
+        let mut patched = rva.is_none();
         let mut last_path: i64 = -2;
         let mut n: u32 = 0;
         let mut accel_max: u8 = 0;
@@ -213,6 +242,13 @@ fn poll_state(base: usize) {
                 } else {
                     log!("indrun: [state] race state +0x668 = {now}");
                 }
+            }
+            if !patched && now >= 0 {
+                if let Some(rva) = rva {
+                    unsafe { jump_to(base, rva, indlog_stub as *const () as usize) };
+                    log!("indlog: IndRun log function un-stubbed at IndRun.dll+{rva:#x}");
+                }
+                patched = true;
             }
             let path = unsafe { read_path_points(path_singleton) }.map_or(-1, |c| c as i64);
             if path != last_path {

@@ -135,6 +135,15 @@ fn switches() -> [u16; 2] {
             }
         }
         sw[1] = wal_payload_common::hshifter::gate(wal_payload_common::hshifter::gear(p1)) as u16;
+        // `WAL_ALLS_LOG_INPUT=1`: the buttons the launcher sent and the switch bits the
+        // cabinet reports, so a scripted press can be compared with a physical one.
+        if log_input() {
+            static LAST: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+            let cur = sw[0] as u32 | (sw[1] as u32) << 16;
+            if LAST.swap(cur, Ordering::Relaxed) != cur {
+                log!("io4: idac switches={cur:#010x} (up/down/left/right/start/b1 in sw0) buttons={p1:#06x}");
+            }
+        }
         return sw;
     }
     if board() == Board::Hotd {
@@ -201,12 +210,28 @@ fn report() -> [u8; 64] {
         for (i, v) in adc.iter().enumerate() {
             r[1 + i * 2..3 + i * 2].copy_from_slice(&v.to_le_bytes());
         }
+        // `WAL_ALLS_LOG_INPUT=1`: the wheel the cabinet reads, when it turns (logs a
+        // physical wheel turn next to the buttons, to compare with a scripted `lx-`).
+        if log_input() {
+            static LAST: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-100_000);
+            let steer = adc[0] as i32;
+            if (steer - LAST.load(Ordering::Relaxed)).abs() > 3000 {
+                LAST.store(steer, Ordering::Relaxed);
+                log!("io4: idac wheel={steer}");
+            }
+        }
     }
     let sw = switches();
     r[29..31].copy_from_slice(&sw[0].to_le_bytes());
     r[31..33].copy_from_slice(&sw[1].to_le_bytes());
     r[33] = SYSTEM_STATUS.load(Ordering::Relaxed);
     r
+}
+
+/// `WAL_ALLS_LOG_INPUT=1`: log the cabinet input the game reads.
+fn log_input() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("WAL_ALLS_LOG_INPUT").is_ok_and(|v| v.trim() == "1"))
 }
 
 static TRACES: AtomicUsize = AtomicUsize::new(0);

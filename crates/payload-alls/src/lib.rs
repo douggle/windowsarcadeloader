@@ -73,6 +73,7 @@ mod cts;
 mod daemon;
 mod dashboard;
 mod english;
+mod expmode;
 mod ffb;
 mod gore;
 mod gs;
@@ -85,9 +86,12 @@ mod icf;
 mod idac;
 mod idz;
 mod idzenglish;
+mod indbind;
 mod indctl;
 mod indlog;
+mod indrecv;
 mod indrun;
+mod indstate;
 mod inifile;
 mod io4;
 mod led;
@@ -185,6 +189,7 @@ fn start() {
                 // the game server (Aime card players), the cabinet's Windows (segatools' indrun)
                 idac::init();
                 indrun::init();
+                expmode::install();
                 // the game server's echo servers (its NAT check)
                 udp::init_echo();
                 // COM1: the force feedback board (Sega World Drivers Championship's), COM2 the

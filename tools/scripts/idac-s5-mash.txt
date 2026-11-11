@@ -1,0 +1,195 @@
+# Initial D THE ARCADE Season 5 — mash through the menus into a race.
+#
+#   ./dist/arcade-launcher run "<dump>/initial-d-the-arcade-season-5.windowsloader" \
+#     --input-script tools/scripts/idac-s5-mash.txt
+#
+# Times count from the moment the launcher spawns the game. Boot-to-attract varies by
+# tens of seconds here, so instead of timed navigation this credits the game three times
+# and then pulses START every 3 s for five minutes: the default choice on every screen
+# (attract, card, start menu, mode select, course, car, race connect) is taken, which
+# lands in a Story race. The gas pedal is held from 60 s so the car moves off the line
+# in the race; START pulsing stops at 300 s so it cannot open the pause menu mid-race.
+12.0 p1 coin
+12.4 p1 -
+20.0 p1 coin
+20.4 p1 -
+28.0 p1 coin
+28.4 p1 -
+34.0 p1 start
+34.5 p1 -
+37.0 p1 start
+37.5 p1 -
+40.0 p1 start
+40.5 p1 -
+43.0 p1 start
+43.5 p1 -
+46.0 p1 start
+46.5 p1 -
+49.0 p1 start
+49.5 p1 -
+52.0 p1 start
+52.5 p1 -
+55.0 p1 start
+55.5 p1 -
+58.0 p1 start
+58.5 p1 -
+61.0 p1 start accel
+61.5 p1 accel
+64.0 p1 start accel
+64.5 p1 accel
+67.0 p1 start accel
+67.5 p1 accel
+70.0 p1 start accel
+70.5 p1 accel
+73.0 p1 start accel
+73.5 p1 accel
+76.0 p1 start accel
+76.5 p1 accel
+79.0 p1 start accel
+79.5 p1 accel
+82.0 p1 start accel
+82.5 p1 accel
+85.0 p1 start accel
+85.5 p1 accel
+88.0 p1 start accel
+88.5 p1 accel
+91.0 p1 start accel
+91.5 p1 accel
+94.0 p1 start accel
+94.5 p1 accel
+97.0 p1 start accel
+97.5 p1 accel
+100.0 p1 start accel
+100.5 p1 accel
+103.0 p1 start accel
+103.5 p1 accel
+106.0 p1 start accel
+106.5 p1 accel
+109.0 p1 start accel
+109.5 p1 accel
+112.0 p1 start accel
+112.5 p1 accel
+115.0 p1 start accel
+115.5 p1 accel
+118.0 p1 start accel
+118.5 p1 accel
+121.0 p1 start accel
+121.5 p1 accel
+124.0 p1 start accel
+124.5 p1 accel
+127.0 p1 start accel
+127.5 p1 accel
+130.0 p1 start accel
+130.5 p1 accel
+133.0 p1 start accel
+133.5 p1 accel
+136.0 p1 start accel
+136.5 p1 accel
+139.0 p1 start accel
+139.5 p1 accel
+142.0 p1 start accel
+142.5 p1 accel
+145.0 p1 start accel
+145.5 p1 accel
+148.0 p1 start accel
+148.5 p1 accel
+151.0 p1 start accel
+151.5 p1 accel
+154.0 p1 start accel
+154.5 p1 accel
+157.0 p1 start accel
+157.5 p1 accel
+160.0 p1 start accel
+160.5 p1 accel
+163.0 p1 start accel
+163.5 p1 accel
+166.0 p1 start accel
+166.5 p1 accel
+169.0 p1 start accel
+169.5 p1 accel
+172.0 p1 start accel
+172.5 p1 accel
+175.0 p1 start accel
+175.5 p1 accel
+178.0 p1 start accel
+178.5 p1 accel
+181.0 p1 start accel
+181.5 p1 accel
+184.0 p1 start accel
+184.5 p1 accel
+187.0 p1 start accel
+187.5 p1 accel
+190.0 p1 start accel
+190.5 p1 accel
+193.0 p1 start accel
+193.5 p1 accel
+196.0 p1 start accel
+196.5 p1 accel
+199.0 p1 start accel
+199.5 p1 accel
+202.0 p1 start accel
+202.5 p1 accel
+205.0 p1 start accel
+205.5 p1 accel
+208.0 p1 start accel
+208.5 p1 accel
+211.0 p1 start accel
+211.5 p1 accel
+214.0 p1 start accel
+214.5 p1 accel
+217.0 p1 start accel
+217.5 p1 accel
+220.0 p1 start accel
+220.5 p1 accel
+223.0 p1 start accel
+223.5 p1 accel
+226.0 p1 start accel
+226.5 p1 accel
+229.0 p1 start accel
+229.5 p1 accel
+232.0 p1 start accel
+232.5 p1 accel
+235.0 p1 start accel
+235.5 p1 accel
+238.0 p1 start accel
+238.5 p1 accel
+241.0 p1 start accel
+241.5 p1 accel
+244.0 p1 start accel
+244.5 p1 accel
+247.0 p1 start accel
+247.5 p1 accel
+250.0 p1 start accel
+250.5 p1 accel
+253.0 p1 start accel
+253.5 p1 accel
+256.0 p1 start accel
+256.5 p1 accel
+259.0 p1 start accel
+259.5 p1 accel
+262.0 p1 start accel
+262.5 p1 accel
+265.0 p1 start accel
+265.5 p1 accel
+268.0 p1 start accel
+268.5 p1 accel
+271.0 p1 start accel
+271.5 p1 accel
+274.0 p1 start accel
+274.5 p1 accel
+277.0 p1 start accel
+277.5 p1 accel
+280.0 p1 start accel
+280.5 p1 accel
+283.0 p1 start accel
+283.5 p1 accel
+286.0 p1 start accel
+286.5 p1 accel
+289.0 p1 start accel
+289.5 p1 accel
+292.0 p1 start accel
+292.5 p1 accel
+295.0 p1 start accel
+295.5 p1 accel
+298.0 p1 start accel
+298.5 p1 accel
